@@ -1,0 +1,130 @@
+#!/usr/nikola/bin/perl
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Pod::Usage;
+
+my ( $help, $man );
+my $directinput = 0;
+my $verbose = 0;
+
+my $print_filenames;
+
+GetOptions(
+	   'help|?' => \$help,
+	   man      => \$man,
+	   directinput => \$directinput,
+	   'verbose+' => \$verbose,
+	   'print-filenames!' => \$print_filenames,
+  ) or pod2usage(2);
+pod2usage(1) if ($help);
+pod2usage( -exitstatus => 0, -verbose => 2 ) if ($man);
+
+# we wouldn't need the elaborate codeblock below if passing \*ARGV as
+# a filehandle worked properly outside of while (<>). (but see perldoc
+# perltodo). But code that operates on a filehandle (e.g.
+# Lingua::Treebank) needs this block.
+
+# If you can use while (<>), then the block below isn't
+# necessary. Just use 'while (<>) {}' instead.
+use Lingua::Treebank;
+{
+    if (@ARGV == 0) {
+	push @ARGV, '-';
+    }
+    for (@ARGV) {
+	if ($_ eq '-' and -t STDIN and not $directinput) {
+	    pod2usage "STDIN requested, but hooked to a live TTY;" .
+	      " perhaps you want the --directinput option?"
+	  }
+
+	my $filename = $_;
+
+	open my $fh, $_
+	  or die "Couldn't open '$_': $!\n";
+
+	my @trees = Lingua::Treebank->from_penn_fh($fh);
+	for my $tree (@trees) {
+	    for my $word ($tree->get_all_terminals()) {
+		my @out;
+		if ($print_filenames) {
+		    push @out, $filename;
+		}
+		push @out, $word->word(), $word->tag();
+		print join ("\t", @out), "\n";
+	    }
+	}
+
+	close $fh or die "Couldn't close '$filename': $!\n";
+	warn "done reading from $filename\n" if $verbose;
+    }
+}
+
+__END__
+
+=head1 NAME
+
+  get-pos - extracts word and POS tag from trees, lists one per line.
+
+=head1 SYNOPSIS
+
+  get-pos [options] [file ...]
+
+  Options:
+     -help        brief help message
+     -man         full documentation
+    --verbose     more verbose to STDERR
+    --directinput allow TTY to STDIN
+
+    --print-filenames  print the filename as the first column
+    --noprint-filenames  default is noprint-filenames
+
+=head1 OPTIONS
+
+=over
+
+=item B<--help>
+
+=item B<-?>
+
+Show this help message.
+
+=item B<--man>
+
+Show the manual page for this script.
+
+=item B<--directinput>
+
+By default, requests to get trees from a human-operated TTY on STDIN
+will get a usage message and an exit (this is so users can run
+C<mrg_to_side> and get the usage message).  If you really want to type
+trees by hand on STDIN, add the B<--directinput> flag.
+
+=item B<--verbose>
+
+Repeatable option. Report more of what we're doing.
+
+=item B<--print-filenames>
+
+=item B<--noprint-filenames>
+
+Print (or don't) the filenames given on the commandline to the first
+column of the output.
+
+=back
+
+=head1 DESCRIPTION
+
+More detailed description of what we're doing.
+
+=head2 CAVEATS
+
+=head2 TO DO
+
+=head1 AUTHOR
+
+Jeremy G. Kahn E<lt>jgk@ssli.ee.washington.eduE<gt>
+
+=cut
