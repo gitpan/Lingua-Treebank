@@ -12,12 +12,11 @@ require Exporter;
 our @ISA = qw ( Exporter ) ;
 our @EXPORT_OK = qw();
 our @EXPORT = qw();
-our $VERSION = '0.09';
+our $VERSION = '0.10';
 
 our $MAX_WARN_TEXT = 100;
 our $VERBOSE = 1;
 ##################################################################
-use Text::Balanced 'extract_bracketed';
 use Lingua::Treebank::Const;
 our $CONST_CLASS = 'Lingua::Treebank::Const';
 ##################################################################
@@ -67,11 +66,6 @@ sub from_penn_fh {
 	$rawTrees =~ s/^\s+//;
 	my $token = Lingua::Treebank::Const->find_brackets($rawTrees);
 
-# 	if (defined $@) {
-# 	    croak "Text::Balanced said: $@->{error} at $@->{pos} in string ",
-# 	      cite_warning ($rawTrees);
-# 	}
-
 	if (defined $token) {
 	    substr ($rawTrees, 0, length $token) = '';
 
@@ -89,7 +83,6 @@ sub from_penn_fh {
 	    }
 	}
 	else {
-	    
 	    # no token extractable
 	    carp "unrecognized data '", cite_warning($rawTrees),
 	      "' remaining in filehandle ignored";
@@ -127,15 +120,15 @@ sub from_cnf_fh {
 
       NODE:
 	while (length $_) {
-	    my $text;
-	    ($text, $_) = Text::Balanced::extract_bracketed($_, '()');
-
-	    # Did we fail to extract bracketed text?
-	    if (defined $@) {
-		die "Text::Balanced said: $@->{error} at $@->{pos} in string $_\n";
-	    }
+	    my $text = Lingua::Treebank::Const->find_brackets($_);
 
 	    if (length $text) {
+
+		# Remove the matched constituent from the remaining
+		# text.
+		substr ($_, 0, length $text) = '';
+		s/^\s+//;
+
 		# The bracketed text is a CNF treebank constituent.
 		my Lingua::Treebank::Const $node =
 		  Lingua::Treebank::Const->new->from_cnf_string($text);
@@ -231,7 +224,7 @@ sentence "I spoke" would be rendered in each format as follows:
         (NP
             I_N)
         (VP
-            V spoke_V))
+            spoke_V))
      Chomsky Normal Form
 
 Almost all the interesting tree-functionality is in the
@@ -299,6 +292,14 @@ Improved documentation.
 
 added a VERBOSE variable that can be set.
 
+=item 0.09
+
+A variety of additional features
+
+=item 0.10
+
+more features still, also some bugfixes.
+
 =back
 
 =head1 SEE ALSO
@@ -311,7 +312,8 @@ Jeremy Gillmor Kahn, E<lt>kahn@cpan.orgE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright 2003 by Jeremy Gillmor Kahn
+Copyright 2003-2005 by Jeremy Gillmor Kahn with additional support
+from Bill McNeill
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself.

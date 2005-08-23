@@ -23,7 +23,6 @@ use overload
   '0+'     => \&numerify, # find location in memory
   fallback => 1, # numeric tests measure memory location
   ;
-# use Text::Balanced 'extract_bracketed';
 ##################################################################
 our $INDENT_CHAR = ' ' x 4;
 our $CHILD_PROLOG = "\n";
@@ -722,31 +721,41 @@ sub from_cnf_string {
     my __PACKAGE__ $self = shift;
     my $class = ref $self;
     local $_ = shift;
+
+    # Strip leading and trailing whitespace.
     s/^\s+//;
     s/\s+$//;
+    # Remove outermost parenthesis pair.
     if (s/^ \( \s* (.*) \s* \) $/$1/x) {
+	# This is a non-terminal node.
+	# Extract the non-terminal tag.
 	s/^(\S+)\s*//;
 	my $tag = $1;
 	$self->tag($tag);
+	# Enumerate all the children of this node.
 	while (length $_) {
 	    my $childtext;
 	    if ( /^\(/ ) {
- 		$childtext = extract_bracketed($_, "()");
+		# The child is a non-terminal node.
+ 		$childtext = $class->find_brackets($_);
+		substr ($_, 0, length $childtext) = '';
 		# BUGBUG check for errors here?
 	    }
 	    else {
+		# The child is a terminal node.
 		s/^(\S+)\s*// or carp "couldn't find text in $_\n";
 		$childtext = $1;
 	    }
-	    my __PACKAGE__ $child =
-#  	      $Lingua::Treebank::CONST_CLASS->new();
-	      $class->new();
+	    # Create a child node structure.
+	    my __PACKAGE__ $child = $class->new();
 	    $child->from_cnf_string($childtext);
 	    $self->append($child);
+	    # Skip whitespace delimiting children.
 	    s/^\s+//;
 	}
     }
     elsif (/^([^_]+)_(\S+)$/) {
+	# This is a terminal node.
 	my ($word, $tag) = ($1, $2);
 	$self->word($word);
 	$self->tag($tag);
@@ -770,9 +779,6 @@ sub from_penn_string {
     # JGK: why @tags? can't remember...
 #      my (@tags) = shift;
 
-
-    # JGK: modify this to call extract_bracketed immediately?
-    # how does this cope with broken data?
 
     # strip off front and back parens and whitespace
     $text =~ s/^ \s* \( \s* //x;
@@ -802,7 +808,6 @@ sub from_penn_string {
     }
     while (length $childrentext) {
 	my $childtext = $class->find_brackets($childrentext);
-#	my $childtext = extract_bracketed($childrentext, '()');
 	if (defined $childtext) {
 	    # child is itself a constituent
 	    my __PACKAGE__ $child = $class->new();
@@ -1226,6 +1231,11 @@ sub word {
     }
 }
 ##################################################################
+sub text {
+    my __PACKAGE__ $self = shift;
+    return join(" ", map {$_->word()} $self->get_all_terminals());
+}
+##################################################################
 sub new {
     my $class = shift;
     my %args = @_;
@@ -1263,7 +1273,7 @@ Lingua::Treebank::Const - Object modeling constituent from a treebank
     (. .) )
   TREE
 
-  my $utt = Lingua::Treebank::Const->new->from_penn_text($text)
+  my $utt = Lingua::Treebank::Const->new->from_penn_string($text)
 
   print $utt->as_penn_text(), "\n";;
 
@@ -1309,7 +1319,7 @@ C<A>.
 =item new
 
 Constructs a new (uninitialized) token.  If starting from text, can be
-used together with the C<from_penn_text> initialization method, as
+used together with the C<from_penn_string> initialization method, as
 below:
 
   my $text = <<EOTREE
@@ -1372,6 +1382,13 @@ Returns whatever comes after the hyphen in the constituent label.
 
 If this constituent is terminal, then C<word> should contain the
 lexical item that is represented.
+
+=item text
+
+A string containing the word values of the terminal nodes donminated
+by this constituent.  For example, calling text on a node created from
+the Penn text given in the description of the new function returns the
+string "this is lisa .".
 
 =item parent
 
