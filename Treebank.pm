@@ -12,7 +12,7 @@ require Exporter;
 our @ISA = qw ( Exporter ) ;
 our @EXPORT_OK = qw();
 our @EXPORT = qw();
-our $VERSION = '0.10';
+our $VERSION = '0.11';
 
 our $MAX_WARN_TEXT = 100;
 our $VERBOSE = 1;
@@ -299,6 +299,11 @@ A variety of additional features
 =item 0.10
 
 more features still, also some bugfixes.
+
+=item 0.11
+
+Removed references to Text::Balanced, which is slow and not uniformly
+available.
 
 =back
 
