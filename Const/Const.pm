@@ -6,7 +6,7 @@ use warnings;
 use Carp;
 
 use Lingua::Treebank;
-our $VERSION = '0.09';
+our $VERSION = $Lingua::Treebank::VERSION;
 our $VERBOSE = $Lingua::Treebank::VERBOSE;
 our $BF_TRAVERSAL;
 ##################################################################
@@ -857,7 +857,10 @@ sub find_brackets {
     my $nextL = index $text, '(', $posn+1;
     my $nextR = index $text, ')', $posn+1;
 
-    croak if $nextR < $nextL;
+    croak ("I found a right bracket before a left-bracket. ",
+	   "Brackets mis-nested. Are you using .psd files instead of .mrg?")
+      if $nextR < $nextL;
+
     return if ($nextL==-1 and $nextR==-1);
 
     $posn=$nextL;
