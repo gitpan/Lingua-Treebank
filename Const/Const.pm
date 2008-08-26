@@ -17,6 +17,7 @@ use constant {
     PARENT   => 4,
     CHILDREN => 5,
     NUM      => 6,
+    HEADCHILD => 7, # only used after Headfinder
 };
 use overload
   '""'     => \&stringify,
@@ -31,19 +32,35 @@ our $STRINGIFY = 'as_penn_text';
 ##################################################################
 sub numerify {
     my $self = shift;
-    if (not defined $self->[NUM]) {
-	# fetch out the number indicating the location in memory
-	my $refstr= overload::StrVal( $self );
-	if ($refstr =~ m{\( 0x ([0-9a-fA-F]+) \) $}x) { #
-            # }
-	    # cache it for later to save the regex
-	    $self->[NUM] = hex $1;
-	}
-	else {
-	    confess "numerify wasn't able to extract a numeric ref";
-	}
-    }
-    return $self->[NUM];
+    my $num = $self->[NUM];
+    confess "no numeric value!?" unless defined $num;
+    return $num;
+}
+## the approach below is not portable. assign a new number from
+## $__NUMID for every constituent at new() instead.
+# sub numerify {
+#     my $self = shift;
+#     if (not defined $self->[NUM]) {
+# 	# fetch out the number indicating the location in memory
+# 	my $refstr= overload::StrVal( $self );
+# 	if ($refstr =~ m{\( 0x ([0-9a-fA-F]+) \) $}x) { #
+#             # }
+# 	    # cache it for later to save the regex
+# 	    $self->[NUM] = hex $1;
+# 	}
+# 	else {
+# 	    confess "numerify wasn't able to extract a numeric ref";
+# 	}
+#     }
+#     return $self->[NUM];
+#}
+our $__NUMID = 100;  # never be small, just to be sure
+sub _next_numid {
+  # for assigning unique numeric values to each new constituent;
+  # invoked from the ->new() method
+  my $class = shift;
+  ++$__NUMID;
+  return $__NUMID;
 }
 ##################################################################
 sub stringify {
@@ -683,6 +700,7 @@ sub as_penn_text {
     my $indentChar = shift;
     my $child_prolog = shift;
     my $child_epilog = shift;
+    my $am_head = shift;
 
     # set defaults (in case called without full specification)
     $step = 0 if not defined $step;
@@ -692,6 +710,13 @@ sub as_penn_text {
 
     # begin composition of text
     my $label = $self->tag();
+    if (defined $am_head) {
+      if ($am_head) {
+	$label = '*'.$label.'*';
+      }
+    }
+    # don't touch if $am_head undef
+
     if (defined $self->annot()) {
 	$label .= '-' . $self->annot();
     }
@@ -703,13 +728,18 @@ sub as_penn_text {
     }
     else {
 	# non-terminal
-
-	foreach my  __PACKAGE__ $d ( @{$self->children} ) {
-	    $text .= $child_prolog;
-	    $text .= ($indentChar x ($step + 1));
-	    $text .= $d->as_penn_text($step + 1, $indentChar, $child_prolog, $child_epilog);
-	    $text .= $child_epilog;
+      my $head = $self->headchild();
+      
+      foreach my  __PACKAGE__ $d ( @{$self->children} ) {
+	$text .= $child_prolog;
+	$text .= ($indentChar x ($step + 1));
+	my $child_is_head;
+	if (defined $head) {
+	  $child_is_head = ($head == $d ? 1 : 0);
 	}
+	$text .= $d->as_penn_text($step + 1, $indentChar, $child_prolog, $child_epilog, $child_is_head);
+	$text .= $child_epilog;
+      }
     }
 
     $text .= ')';
@@ -784,6 +814,11 @@ sub from_penn_string {
     $text =~ s/^ \s* \( \s* //x;
     $text =~ s/ \s* \) \s* $//x;
 
+    # handle perverse cases where the brackets are the text, like
+    # (NP (-LRB- () (NNP Joe) (-RRB- )))
+    $text =~ s/\(-LRB- \(\)/__LPRN__/g;
+    $text =~ s/\(-RRB- \)\)/__RPRN__/g;
+
     # tag is everything up to the first whitespace or
     # parenthesis. Children are everything else.
     my ($tag, $childrentext) =
@@ -807,6 +842,23 @@ sub from_penn_string {
 	$self->tag($tag);
     }
     while (length $childrentext) {
+	# handle perverse cases where the brackets are the text, like
+	# (NP (-LRB- () (NNP Joe) (-RRB- )))
+	if ($childrentext =~ s/^\s*__LPRN__\s*//) {
+	    my __PACKAGE__ $child = $class->new();
+	    $child->tag('-LRB-');
+	    $child->word('(');
+	    $self->append($child);
+	    next;
+	}
+	elsif ($childrentext =~ s/^\s*__RPRN__\s*//) {
+	    my __PACKAGE__ $child = $class->new();
+	    $child->tag('-RRB-');
+	    $child->word(')');
+	    $self->append($child);
+	    next;
+	}
+
 	my $childtext = $class->find_brackets($childrentext);
 	if (defined $childtext) {
 	    # child is itself a constituent
@@ -1011,6 +1063,11 @@ sub detach_at {
 
     # remove links
     $d->clear_parent();
+
+    if (defined $self->headchild() and $self->headchild() == $d) {
+	$self->clear_headchild();
+    }
+
     splice @{$self->children}, $index, 1, (); # replace with empty list
 }
 ##################################################################
@@ -1149,6 +1206,82 @@ sub num_children {
     return scalar @{$self->[ CHILDREN ]};
 }
 ##################################################################
+# Functions for headed trees
+##################################################################
+sub capitalize_headed {
+  my __PACKAGE__ $self = shift;
+  if ($self->is_terminal) {
+    return;
+  }
+  my $head = $self->headchild();
+  for my $kid (@{$self->children}) {
+    if ($kid == $head) {
+      $kid->tag(uc $kid->tag());
+    }
+    else {
+      $kid->tag(lc $kid->tag());
+    }
+    $kid->capitalize_headed();
+  }
+}
+
+sub maximal_projection {
+  # given a node (usually a leaf!) climb the tree until I'm not the
+  # headword any more
+  my __PACKAGE__ $self = shift;
+  my $maximal = $self;
+
+ CLIMB:
+  while (1) {
+    my $parent = $maximal->parent();
+    if (not defined $parent or $parent->headterminal() != $self) {
+      last CLIMB;  # done! $maximal is it
+    }
+    $maximal = $parent;
+  }
+  return $maximal;
+}
+##################################################################
+sub clear_headchild {
+    my __PACKAGE__ $self = shift;
+    $self->[HEADCHILD] = undef;
+}
+##################################################################
+sub headterminal {
+    my __PACKAGE__ $self = shift;
+    if ($self->is_terminal()) {
+	return $self;
+    }
+    my $headchild = $self->headchild();
+
+    return undef if not defined $headchild;
+
+    return $headchild->headterminal();
+}
+##################################################################
+sub headchild {
+    my __PACKAGE__ $self = shift;
+    if (@_) {
+	# setting
+	if (@_ > 1) {
+	    croak "->headchild() called with >1 argument";
+	}
+	my $val = $_[0];
+	croak "->headchild() argument wrong class"
+	  if ( not UNIVERSAL::isa($val, __PACKAGE__) );
+
+	if (not grep { $val == $_ } @{$self->[ CHILDREN ]}) {
+	    croak "->headchild() setting used value that wasn't ",
+	      "one of its kids";
+	}
+	$self->[HEADCHILD] = $val;
+    }
+    else {
+	# getting
+	return $self->[HEADCHILD];
+    }
+}
+##################################################################
 sub parent {
     my __PACKAGE__ $self = shift;
     if (@_) {
@@ -1213,7 +1346,7 @@ sub word {
 	}
 
 	if (@{$self->[CHILDREN]}) {
-	    carp "can't assign a word when children exist, ignoring!";
+	    croak "can't assign a word when children exist, failing!";
 	    return;
 	}
 
@@ -1239,6 +1372,7 @@ sub new {
     my %args = @_;
     my $self = bless [], $class;
     $self->[CHILDREN] = [];
+    $self->[NUM] = $class->_next_numid();
     foreach (keys %args) {
 	if ($self->can($_)) {
 	    $self->$_($args{$_});
